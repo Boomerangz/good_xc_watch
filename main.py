@@ -1,0 +1,143 @@
+from aerofiles import igc
+import os
+import json 
+from pykml.factory import KML_ElementMaker as KML
+import glob
+import transliterate
+
+cur_dir = os.path.dirname(__file__)
+
+
+# print(result['header'])
+# print(result.keys())
+
+import datetime
+
+
+icons = [
+	"http://maps.google.com/mapfiles/kml/pushpin/blue-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/ltblu-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/pink-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/purple-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/wht-pushpin.png",
+	"http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png"
+]
+
+
+def get_coordinates(igc_parsed, name):
+	for item in igc_parsed['fix_records']:				
+		result = [			
+		]		
+#		href = 'http://maps.google.com/mapfiles/kml/shapes/track.png'
+		href = random.choice(icons)
+		prev = None
+		for subitem in item:
+			t = datetime.datetime.combine(datetime.date.today(), subitem['time'])
+			if prev is None or (t - prev) >= datetime.timedelta(seconds=2):
+ 				result.append(GX.coord('%f %f %d'%(subitem['lon'],subitem['lat'], subitem['gps_alt'])))
+				result.append(KML.when(t.isoformat()))
+   				prev = t
+		yield KML.Placemark(
+				KML.name(name),
+					KML.Style(
+						KML.LineStyle(
+							KML.color(random_color()),
+							KML.width(2)
+					),
+					KML.IconStyle(
+							KML.Icon(
+								KML.href(
+									href
+								)
+							),
+						),
+				),
+				GX.Track(				
+					KML.extrude('0'),
+					GX.altitudeMode('absolute'),
+					*result
+				),
+			)
+
+def get_coordinates_placemarks(igc_parsed, name):
+	href = random.choice(icons)
+	
+	for item in igc_parsed['fix_records']:
+		previous_time = None
+		for i in range(len(item)):			
+			subitem = item[i]
+			t = datetime.datetime.combine(datetime.date.today(), subitem['time'])
+			if i in (0, len(item)-1) or t-previous_time>=datetime.timedelta(seconds=2):
+				yield KML.Placemark(
+					KML.Style(
+						KML.IconStyle(
+							KML.Icon(
+								KML.href(
+									href
+								)
+							),
+						),
+					),
+					KML.TimeSpan(
+						KML.begin((previous_time or datetime.datetime.combine(datetime.date.today(), 
+							subitem['time'])).isoformat()
+							),
+						KML.end((datetime.datetime.combine(datetime.date.today(), 
+							subitem['time'])).isoformat()
+							)
+					),
+					KML.Point(
+						GX.altitudeMode('relativeToSeaFloor'),
+						KML.coordinates(
+							'%f,%f,%d'%(subitem['lon'],subitem['lat'], subitem['gps_alt'])
+							
+							)
+						)
+					)				
+				previous_time = t	
+			
+
+import random
+def random_color():
+	r = lambda: random.randint(0,255)
+	return '#ff%02X%02X%02X' % (r(),r(),r())
+
+
+def get_placemark_from_file(filename):
+	reader = igc.Reader()
+	with open(filename, 'r') as f:
+		igc_parsed = reader.read(f)
+
+	name = igc_parsed['header'][1]['pilot'] or filename.replace('.igc', '')	
+
+	print(name)
+	name = unicode(name, "utf-8", 'ignore')
+	return KML.Document(
+		KML.name(name),  
+		*(list(get_coordinates(igc_parsed, name)))
+	)
+
+
+from pykml.factory import KML_ElementMaker as KML
+from pykml.factory import ATOM_ElementMaker as ATOM
+from pykml.factory import GX_ElementMaker as GX
+from lxml import etree
+
+# doc = KML.kml(
+#   etree.Comment("asdasd"),
+#   KML.Folder(
+# 	  *[get_placemark_from_file(filename) for filename in glob.glob('*.igc')]
+#   )
+# )
+
+from multiprocessing.dummy import Pool as ThreadPool
+
+
+with open('out.kml', 'w') as f:
+	f.write('<kml xmlns:atom="http://www.w3.org/2005/Atom" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns="http://www.opengis.net/kml/2.2"> <Folder>')
+	pool = ThreadPool(8)
+	for r in pool.imap_unordered(get_placemark_from_file, glob.glob('*.igc')):
+		f.write(etree.tostring(r, pretty_print=True)+'\n')
+	f.write('</Folder> </kml>')
