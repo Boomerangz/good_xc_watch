@@ -3,7 +3,6 @@ import os
 import json 
 from pykml.factory import KML_ElementMaker as KML
 import glob
-import transliterate
 
 cur_dir = os.path.dirname(__file__)
 
